@@ -1,0 +1,74 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-darkest: #180E0A;
+  --color-brand-dark: #2A1B14;
+  --color-brand-coffee: #3F281D;
+  --color-brand-medium: #5C3D2E;
+  --color-brand-hazel: #7D543E;
+  --color-brand-lightBrown: #9E775F;
+  --color-brand-beige: #D9C8B4;
+  --color-brand-creamDark: #EDE3D5;
+  --color-brand-cream: #F7F3EB;
+  --color-brand-creamLight: #FCFAF6;
+  --color-brand-white: #FFFFFF;
+  --color-brand-border: #E4D7C5;
+  --color-brand-borderDark: #C9B59F;
+
+  --color-verdict-pass: #15803D;
+  --color-verdict-passBg: #DCFCE7;
+  --color-verdict-passBorder: #86EFAC;
+  --color-verdict-needs: #B45309;
+  --color-verdict-needsBg: #FEF3C7;
+  --color-verdict-needsBorder: #FCD34D;
+  --color-verdict-fail: #B91C1C;
+  --color-verdict-failBg: #FEE2E2;
+  --color-verdict-failBorder: #FCA5A5;
+
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #F7F3EB;
+  color: #2A1B14;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F1ECE2;
+}
+::-webkit-scrollbar-thumb {
+  background: #C9B59F;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9E775F;
+}
+
+/* Print layout */
+@media print {
+  aside, header, .no-print {
+    display: none !important;
+  }
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  .print-only {
+    display: block !important;
+  }
+}
