@@ -73,18 +73,18 @@ ${reportData.reference_answer || 'None provided'}
 ------------------------------------------------------------------------
 FOUR EVALUATION DIMENSIONS
 ------------------------------------------------------------------------
-1. Factual Accuracy: ${reportData.accuracy_score} / 5.0 (Weight 35%)
+1. Factual Accuracy: ${reportData.accuracy_score} / 5.0 (Weight ${Math.round((reportData.verdict_details?.weights?.accuracy ?? 0.30) * 100)}%)
 Reasoning: ${reportData.accuracy_details?.reasoning || 'N/A'}
 
-2. Hallucination Safety: ${reportData.hallucination_score} / 5.0 (Weight 25%)
+2. Hallucination Safety: ${(reportData.hallucination_score * 2).toFixed(1)} / 10.0 (Weight ${Math.round((reportData.verdict_details?.weights?.hallucination_safety ?? 0.25) * 100)}%)
 Status: ${reportData.hallucination_details?.hallucination_status || 'LOW'}
 Hallucination Percentage (verified contradicted claims): ${reportData.hallucination_percentage}%
 Reasoning: ${reportData.hallucination_details?.reasoning || 'N/A'}
 
-3. Prompt Relevance: ${reportData.relevance_score} / 5.0 (Weight 25%)
+3. Prompt Relevance: ${reportData.relevance_score} / 5.0 (Weight ${Math.round((reportData.verdict_details?.weights?.relevance ?? 0.25) * 100)}%)
 Reasoning: ${reportData.relevance_details?.reasoning || 'N/A'}
 
-4. Completeness: ${reportData.completeness_score} / 5.0 (Weight 15%)
+4. Completeness: ${reportData.completeness_score} / 5.0 (Weight ${Math.round((reportData.verdict_details?.weights?.completeness ?? 0.20) * 100)}%)
 Reasoning: ${reportData.completeness_details?.reasoning || 'N/A'}
 
 ------------------------------------------------------------------------
@@ -198,7 +198,7 @@ ${reportData.recommendations.map((rec) => `- ${rec}`).join('\n') || '- Meets ent
             </div>
             <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200">
               <span className="text-[10px] font-bold text-rose-800 uppercase block">Hallucination Safety</span>
-              <span className="text-2xl font-black text-rose-800 mt-1 block">{reportData.hallucination_score.toFixed(1)} <span className="text-xs text-rose-600">/ 5</span></span>
+              <span className="text-2xl font-black text-rose-800 mt-1 block">{(reportData.hallucination_score * 2).toFixed(1)} <span className="text-xs text-rose-600">/ 10</span></span>
               <span className="text-xs font-semibold text-rose-700 block mt-1">{reportData.hallucination_percentage.toFixed(1)}% contradicted claims</span>
             </div>
             <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200">

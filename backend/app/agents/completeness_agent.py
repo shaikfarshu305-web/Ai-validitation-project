@@ -2,6 +2,7 @@ import time
 import re
 from typing import Dict, Any, List, Optional
 from app.agents.base_agent import BaseAgent
+from app.agents.factual_consistency import _content_words
 from app.services.llm_service import llm_service
 from app.schemas.evaluation_schemas import RetrievedChunk
 
@@ -32,6 +33,8 @@ class CompletenessJudgeAgent(BaseAgent):
             "Your role is to assess whether the AI response answers all aspects, sub-questions, and depth required by the prompt.\n"
             "Reference truth/evidence (if available):\n"
             f"{ref_context or 'None provided'}\n\n"
+            "Do not reward length or penalize a concise answer when it covers every important requested aspect. "
+            "Only report material omissions.\n"
             "Score on a 0 to 5 scale:\n"
             "5 = Complete (comprehensive coverage of all sub-questions and necessary context)\n"
             "4 = Mostly complete (covers primary questions with minor non-critical omissions)\n"
@@ -54,16 +57,26 @@ class CompletenessJudgeAgent(BaseAgent):
         parsed = self.extract_json(raw_llm)
 
         if parsed and "score" in parsed and "reasoning" in parsed:
-            score = float(max(0.0, min(5.0, parsed["score"])))
-            result = {
-                "score": score,
-                "reasoning": str(parsed.get("reasoning", "")),
-                "addressed_aspects": list(parsed.get("addressed_aspects", [])),
-                "missing_aspects": list(parsed.get("missing_aspects", [])),
-                "execution_time_ms": round((time.time() - start_time) * 1000, 2),
-                "status": "SUCCESS"
-            }
-            return result
+            addressed = self.string_list(parsed.get("addressed_aspects", []))
+            missing = self.string_list(parsed.get("missing_aspects", []))
+            try:
+                score = self.normalize_score(parsed["score"], source_scale=5)
+            except ValueError:
+                score = None
+            if (
+                score is not None
+                and isinstance(parsed["reasoning"], str)
+                and addressed is not None
+                and missing is not None
+            ):
+                return {
+                    "score": score,
+                    "reasoning": parsed["reasoning"],
+                    "addressed_aspects": addressed,
+                    "missing_aspects": missing,
+                    "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+                    "status": "SUCCESS"
+                }
 
         res = self._local_evaluate(question, ai_response, reference_answer, retrieved_evidence)
         res["execution_time_ms"] = round((time.time() - start_time) * 1000, 2)
@@ -77,75 +90,58 @@ class CompletenessJudgeAgent(BaseAgent):
         reference_answer: Optional[str],
         retrieved_evidence: Optional[List[RetrievedChunk]]
     ) -> Dict[str, Any]:
-        # Identify sub-clauses in question (using conjunctions 'and', 'also', 'as well as', '?', etc.)
-        clauses = [c.strip() for c in re.split(r'\band\b|\balso\b|\bas well as\b|\?|,', question) if len(c.strip()) > 8]
-        if not clauses:
-            clauses = [question.strip()]
+        clauses = [
+            clause.strip(" ,?")
+            for clause in re.split(
+                r"\band\s+(?=(?:what|when|where|which|who|why|how|does|do|is|are)\b)|"
+                r",\s*(?=(?:what|when|where|which|who|why|how)\b)",
+                question,
+                flags=re.I,
+            )
+            if clause.strip(" ,?")
+        ] or [question.strip()]
 
         addressed = []
         missing = []
-        r_lower = ai_response.lower()
-
-        # Check coverage of each clause
+        response_concepts = _content_words(ai_response)
+        reference_concepts = _content_words(reference_answer or "")
         for clause in clauses:
-            c_words = self.keyword_tokens(clause)
-            stop = {"what", "when", "where", "which", "who", "why", "how", "the", "and", "is", "are", "does", "explain"}
-            c_keywords = [w for w in c_words if w not in stop]
-            if not c_keywords:
+            aspect_concepts = _content_words(clause)
+            if not aspect_concepts:
                 continue
-
-            matches = [w for w in c_keywords if w in r_lower]
-            ratio = len(matches) / len(c_keywords)
-
-            aspect_desc = f"Inquiry aspect: \"{clause[:60]}...\"" if len(clause) > 60 else f"Inquiry aspect: \"{clause}\""
-            if ratio >= 0.5:
-                addressed.append(aspect_desc)
+            matched = aspect_concepts & response_concepts
+            coverage = len(matched) / len(aspect_concepts)
+            reference_coverage = (
+                len(reference_concepts & response_concepts) / len(reference_concepts)
+                if len(clauses) == 1 and reference_concepts
+                else 1.0
+            )
+            description = f'Inquiry aspect: "{clause[:60]}{"..." if len(clause) > 60 else ""}"'
+            question_covered = coverage >= 0.4 or (len(aspect_concepts) <= 2 and matched)
+            if question_covered:
+                addressed.append(description)
             else:
-                missing.append(f"Omitted or insufficiently explained: \"{clause}\"")
+                missing.append(f'Omitted or insufficiently explained: "{clause}"')
+            if question_covered and reference_coverage < 0.5:
+                missing.append("Some important concepts from the reference answer were not covered.")
 
-        # Check reference answer key concepts coverage if provided
-        if reference_answer:
-            ref_words = set(re.findall(r'\b[a-zA-Z]{4,}\b', reference_answer.lower()))
-            common_ref = ref_words.intersection(set(re.findall(r'\b[a-zA-Z]{4,}\b', r_lower)))
-            ref_coverage = len(common_ref) / max(1, len(ref_words))
-        else:
-            ref_coverage = 0.8
-
-        total_aspects = len(addressed) + len(missing)
-        if total_aspects == 0:
-            total_aspects = 1
-            addressed.append("General prompt response")
-
-        addressed_ratio = len(addressed) / total_aspects
-
-        if len(missing) == 0 and len(ai_response.split()) >= 25:
+        aspect_count = len(clauses)
+        coverage = len(addressed) / max(1, aspect_count)
+        if not missing:
             score = 5.0
-            reasoning = "Comprehensive response addressing all explicit questions and underlying context."
-        elif len(missing) == 0:
-            score = 4.2
-            reasoning = "All core aspects addressed, though could benefit from greater elaboration."
-            if not reference_answer and len(ai_response.split()) < 30:
-                q_tokens = set(re.findall(r'\b[a-zA-Z]{3,}\b', question.lower()))
-                stop = {"what", "when", "where", "which", "who", "why", "how", "the", "and", "is", "are", "does", "explain"}
-                q_core = q_tokens - stop
-                if len(q_core) == 1:
-                    generic_signals = {"easy", "popular", "simple", "many", "applications", "types", "basic", "common", "learn", "beginner"}
-                    technical_signals = {"sunlight", "water", "carbon", "dioxide", "glucose", "oxygen", "syntax", "interpreted", "purpose", "science", "automation", "development", "machine", "learning", "intelligence", "data", "framework", "platform", "system"}
-                    if (
-                        any(signal in ai_response.lower() for signal in generic_signals)
-                        and not any(signal in ai_response.lower() for signal in technical_signals)
-                    ):
-                        score = 3.2
-                        reasoning = "The response is broadly on-topic but still too generic and under-detailed for a complete answer."
-        elif addressed_ratio >= 0.65:
-            score = 3.8
-            reasoning = f"Mostly complete; successfully covers {len(addressed)} of {total_aspects} aspects but leaves secondary points incomplete."
-        elif addressed_ratio >= 0.35:
+            reasoning = "The answer covers each requested aspect; concision alone is not treated as an omission."
+        elif coverage >= 0.65:
+            score = 4.0
+            reasoning = f"The answer covers {len(addressed)} of {aspect_count} requested aspects."
+        elif coverage >= 0.35:
             score = 2.5
-            reasoning = f"Partially complete; {len(missing)} requirement(s) were neglected in the AI output."
-        else:
+            reasoning = f"The answer covers only {len(addressed)} of {aspect_count} requested aspects."
+        elif addressed:
             score = 1.5
-            reasoning = "Significant omissions; fails to provide answers to most requested dimensions."
+            reasoning = "The answer touches on the question but omits most requested aspects."
+        else:
+            score = 0.0
+            reasoning = "The answer does not cover the question's requested aspects."
 
         return {
             "score": score,

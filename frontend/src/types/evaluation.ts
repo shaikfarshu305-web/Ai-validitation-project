@@ -17,6 +17,12 @@ export interface AccuracyOutput {
   reasoning: string;
   supporting_evidence: string[];
   incorrect_claims: string[];
+  claim_assessments: Array<{
+    claim: string;
+    status: 'correct' | 'partially_correct' | 'incorrect' | 'unverifiable';
+    reasoning: string;
+    evidence?: string;
+  }>;
   factual_consistency?: 'CONSISTENT' | 'PARTIALLY_CONSISTENT' | 'CONTRADICTORY' | 'UNSUPPORTED';
 }
 

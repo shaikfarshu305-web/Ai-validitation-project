@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
 # --- Input Request Schemas ---
@@ -23,11 +23,18 @@ class RelevanceOutput(BaseModel):
     strengths: List[str] = Field(default_factory=list)
     issues: List[str] = Field(default_factory=list)
 
+class AccuracyClaimAssessment(BaseModel):
+    claim: str
+    status: Literal["correct", "partially_correct", "incorrect", "unverifiable"]
+    reasoning: str
+    evidence: Optional[str] = None
+
 class AccuracyOutput(BaseModel):
     score: float = Field(..., ge=0.0, le=5.0, description="Accuracy score (0 to 5)")
     reasoning: str
     supporting_evidence: List[str] = Field(default_factory=list)
     incorrect_claims: List[str] = Field(default_factory=list)
+    claim_assessments: List[AccuracyClaimAssessment] = Field(default_factory=list)
     factual_consistency: Optional[str] = None
 
 class HallucinationOutput(BaseModel):
@@ -226,10 +233,10 @@ class SettingsSchema(BaseModel):
     llm_provider: str = "local"
     model: str = "Local NLP & Semantic Analyzer"
     temperature: float = 0.2
-    weight_accuracy: float = 0.35
+    weight_accuracy: float = 0.30
     weight_hallucination: float = 0.25
     weight_relevance: float = 0.25
-    weight_completeness: float = 0.15
+    weight_completeness: float = 0.20
     threshold_pass: float = 75.0
     threshold_needs_improvement: float = 50.0
     retrieval_top_k: int = 4

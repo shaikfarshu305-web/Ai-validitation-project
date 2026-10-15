@@ -32,10 +32,10 @@ def _get_weights_thresholds(db: Session):
     if sys_settings and sys_settings.settings_json:
         s = migrate_legacy_default_weights(sys_settings.settings_json)
         weights = {
-            "accuracy": s.get("weight_accuracy", 0.35),
+            "accuracy": s.get("weight_accuracy", 0.30),
             "hallucination": s.get("weight_hallucination", 0.25),
             "relevance": s.get("weight_relevance", 0.25),
-            "completeness": s.get("weight_completeness", 0.15),
+            "completeness": s.get("weight_completeness", 0.20),
         }
         thresholds = {
             "pass": s.get("threshold_pass", 75.0),

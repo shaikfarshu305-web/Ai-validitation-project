@@ -4,7 +4,8 @@ import { Target, CheckCircle, ShieldAlert, Layers } from 'lucide-react';
 interface Props {
   dimension: 'relevance' | 'accuracy' | 'hallucination' | 'completeness';
   title: string;
-  score: number; // 0 - 5
+  score: number;
+  scoreScale?: number;
   description: string;
   weight?: number; // e.g. 0.35
   onClick?: () => void;
@@ -15,12 +16,13 @@ export const DimensionCard: React.FC<Props> = ({
   dimension,
   title,
   score,
+  scoreScale = 5,
   description,
   weight,
   onClick,
   isActive = false,
 }) => {
-  const percentage = Math.round((score / 5) * 100);
+  const percentage = Math.round((score / scoreScale) * 100);
 
   const icons = {
     relevance: <Target className="w-5 h-5 text-[#8C5E3C]" />,
@@ -36,9 +38,9 @@ export const DimensionCard: React.FC<Props> = ({
 
   if (dimension === 'hallucination') {
     // For hallucination, score is Hallucination Safety (5 = clean/safe, 0 = severe hallucination)
-    if (score >= 4.0) {
+    if (score >= scoreScale * 0.8) {
       statusBadge = { text: 'Low Risk', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' };
-    } else if (score >= 2.5) {
+    } else if (score >= scoreScale * 0.5) {
       statusBadge = { text: 'Medium Risk', color: 'bg-amber-100 text-amber-800 border-amber-300' };
     } else {
       statusBadge = { text: 'High Risk', color: 'bg-rose-100 text-rose-800 border-rose-300' };
@@ -91,7 +93,7 @@ export const DimensionCard: React.FC<Props> = ({
           <span className="text-2xl font-black text-[#2A1B14]">
             {score.toFixed(1)}
           </span>
-          <span className="text-xs font-semibold text-[#9E775F]">/ 5.0</span>
+          <span className="text-xs font-semibold text-[#9E775F]">/ {scoreScale.toFixed(1)}</span>
         </div>
         <span className="text-xs font-bold text-[#5C3D2E]">{percentage}%</span>
       </div>

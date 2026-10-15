@@ -36,10 +36,10 @@ class Settings:
     SIMILARITY_THRESHOLD: float = float(os.getenv("SIMILARITY_THRESHOLD", "0.25"))
     
     # Evaluation Weights (Must sum to 1.0)
-    DEFAULT_WEIGHT_ACCURACY: float = 0.35
+    DEFAULT_WEIGHT_ACCURACY: float = 0.30
     DEFAULT_WEIGHT_HALLUCINATION: float = 0.25
     DEFAULT_WEIGHT_RELEVANCE: float = 0.25
-    DEFAULT_WEIGHT_COMPLETENESS: float = 0.15
+    DEFAULT_WEIGHT_COMPLETENESS: float = 0.20
     
     # Verdict Thresholds
     DEFAULT_THRESHOLD_PASS: float = 70.0
@@ -56,16 +56,22 @@ os.makedirs(settings.VECTOR_INDEX_DIR, exist_ok=True)
 def migrate_legacy_default_weights(settings_data: Dict[str, Any]) -> Dict[str, Any]:
     legacy_defaults = (
         {
-        "weight_accuracy": 0.35,
-        "weight_hallucination": 0.30,
-        "weight_relevance": 0.20,
-        "weight_completeness": 0.15,
+            "weight_accuracy": 0.35,
+            "weight_hallucination": 0.30,
+            "weight_relevance": 0.20,
+            "weight_completeness": 0.15,
         },
         {
             "weight_accuracy": 0.35,
             "weight_hallucination": 0.20,
             "weight_relevance": 0.25,
             "weight_completeness": 0.20,
+        },
+        {
+            "weight_accuracy": 0.35,
+            "weight_hallucination": 0.25,
+            "weight_relevance": 0.25,
+            "weight_completeness": 0.15,
         },
     )
     if not all(key in settings_data for key in legacy_defaults[0]):

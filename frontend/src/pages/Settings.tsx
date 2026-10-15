@@ -174,7 +174,7 @@ export const Settings: React.FC = () => {
                 onChange={(e) => handleWeightChange('weight_accuracy', parseFloat(e.target.value))}
                 className="w-full accent-emerald-600"
               />
-              <span className="text-[10px] text-[#9E775F] block">Default: 35%</span>
+              <span className="text-[10px] text-[#9E775F] block">Default: 30%</span>
             </div>
 
             {/* Hallucination Safety Weight */}
@@ -234,7 +234,7 @@ export const Settings: React.FC = () => {
                 onChange={(e) => handleWeightChange('weight_completeness', parseFloat(e.target.value))}
                 className="w-full accent-amber-600"
               />
-              <span className="text-[10px] text-[#9E775F] block">Default: 15%</span>
+              <span className="text-[10px] text-[#9E775F] block">Default: 20%</span>
             </div>
           </div>
         </div>

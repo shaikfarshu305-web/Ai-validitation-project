@@ -259,7 +259,7 @@ export const BatchVerify: React.FC<Props> = ({ onViewEvaluation }) => {
               </div>
               <div className="p-3 rounded-2xl bg-[#FAF7F2] border border-[#E8DFC8]">
                 <span className="text-[10px] font-bold text-rose-800 uppercase">Avg Safety</span>
-                <p className="text-xl font-black text-rose-800 mt-1">{batchStatus.average_hallucination_score} <span className="text-xs text-[#9E775F]">/ 5</span></p>
+                <p className="text-xl font-black text-rose-800 mt-1">{(batchStatus.average_hallucination_score * 2).toFixed(1)} <span className="text-xs text-[#9E775F]">/ 10</span></p>
               </div>
               <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200">
                 <span className="text-[10px] font-bold text-rose-800 uppercase">Hallucination %</span>
@@ -307,7 +307,7 @@ export const BatchVerify: React.FC<Props> = ({ onViewEvaluation }) => {
                     <th className="py-3 px-4">Question</th>
                     <th className="py-3 px-3 text-center">Accuracy</th>
                     <th className="py-3 px-3 text-center">Relevance</th>
-                    <th className="py-3 px-3 text-center">Halluc</th>
+                    <th className="py-3 px-3 text-center">Safety / 10</th>
                     <th className="py-3 px-3 text-center">Complete</th>
                     <th className="py-3 px-3 text-center">Score</th>
                     <th className="py-3 px-4 text-center">Verdict</th>
@@ -335,7 +335,7 @@ export const BatchVerify: React.FC<Props> = ({ onViewEvaluation }) => {
                           {r.relevance_score?.toFixed(1) ?? '-'}
                         </td>
                         <td className="py-3.5 px-3 text-center font-bold text-rose-800">
-                          {r.hallucination_score?.toFixed(1) ?? '-'}
+                          {r.hallucination_score != null ? (r.hallucination_score * 2).toFixed(1) : '-'}
                         </td>
                         <td className="py-3.5 px-3 text-center font-bold text-amber-800">
                           {r.completeness_score?.toFixed(1) ?? '-'}

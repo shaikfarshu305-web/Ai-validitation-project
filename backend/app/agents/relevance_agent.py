@@ -2,7 +2,7 @@ import time
 import re
 from typing import Dict, Any, List, Optional
 from app.agents.base_agent import BaseAgent
-from app.agents.factual_consistency import assess_factual_consistency
+from app.agents.factual_consistency import _content_words, assess_factual_consistency
 from app.services.llm_service import llm_service
 from app.schemas.evaluation_schemas import RelevanceOutput
 from app.schemas.evaluation_schemas import RetrievedChunk
@@ -50,16 +50,27 @@ class RelevanceJudgeAgent(BaseAgent):
         parsed = self.extract_json(raw_llm)
 
         if parsed and "score" in parsed and "reasoning" in parsed:
-            score = self.normalize_score(parsed["score"])
-            res = {
-                "score": score,
-                "reasoning": str(parsed.get("reasoning", "")),
-                "strengths": list(parsed.get("strengths", [])),
-                "issues": list(parsed.get("issues", [])),
-                "execution_time_ms": round((time.time() - start_time) * 1000, 2),
-                "status": "SUCCESS"
-            }
-            return self._apply_factual_consistency(res, question, ai_response, evidence_texts)
+            strengths = self.string_list(parsed.get("strengths", []))
+            issues = self.string_list(parsed.get("issues", []))
+            try:
+                score = self.normalize_score(parsed["score"], source_scale=100)
+            except ValueError:
+                score = None
+            if (
+                score is not None
+                and isinstance(parsed["reasoning"], str)
+                and strengths is not None
+                and issues is not None
+            ):
+                res = {
+                    "score": score,
+                    "reasoning": parsed["reasoning"],
+                    "strengths": strengths,
+                    "issues": issues,
+                    "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+                    "status": "SUCCESS"
+                }
+                return self._apply_factual_consistency(res, question, ai_response, evidence_texts)
 
         # High-Fidelity Local Semantic Fallback
         res = self._local_evaluate(question, ai_response)
@@ -87,85 +98,42 @@ class RelevanceJudgeAgent(BaseAgent):
         return result
 
     def _local_evaluate(self, question: str, ai_response: str) -> Dict[str, Any]:
-        q_tokens = set(self.keyword_tokens(question))
-        r_tokens = set(self.keyword_tokens(ai_response))
+        question_concepts = _content_words(question)
+        response_concepts = _content_words(ai_response)
+        matched_concepts = question_concepts & response_concepts
+        coverage = len(matched_concepts) / max(1, len(question_concepts))
 
-        if not q_tokens:
-            q_tokens = {"topic"}
+        causal_question = bool(re.search(r"\b(?:why|what causes|what is the cause)\b", question, re.I))
+        answers_cause = bool(response_concepts & {"cause", "result", "reason", "explain"})
+        if causal_question and not answers_cause:
+            coverage *= 0.5
 
-        overlap = q_tokens.intersection(r_tokens)
-        overlap_ratio = len(overlap) / len(q_tokens)
-
-        r_sentences = [s.strip() for s in re.split(r'[.!?]+', ai_response) if len(s.strip()) > 5]
-        first_sentence = r_sentences[0].lower() if r_sentences else ""
-        first_overlap = q_tokens.intersection(set(self.keyword_tokens(first_sentence)))
-        first_direct = len(first_overlap) > 0
-        generic_definition_signals = {
-            "easy", "popular", "simple", "many", "applications", "types", "basic", "common",
-            "learn", "beginner", "general", "broadly"
-        }
-        technical_definition_signals = {
-            "sunlight", "water", "carbon", "dioxide", "glucose", "oxygen", "syntax",
-            "interpreted", "general", "purpose", "science", "automation", "development",
-            "machine", "learning", "intelligence", "data", "framework", "platform", "system"
-        }
+        if coverage >= 0.7:
+            score = 5.0
+            reasoning = "The response directly addresses the question's central concepts and requested intent."
+        elif coverage >= 0.5:
+            score = 4.5
+            reasoning = "The response addresses the main question, with some requested concepts not clearly covered."
+        elif coverage >= 0.3:
+            score = 3.5
+            reasoning = "The response is partly relevant but does not fully resolve the question."
+        elif coverage >= 0.15:
+            score = 2.0
+            reasoning = "The response has limited topical connection and mostly misses the question's intent."
+        else:
+            score = 1.0
+            reasoning = "The response does not meaningfully address the submitted question."
 
         strengths = []
         issues = []
-
-        if overlap_ratio >= 0.7:
-            if first_direct:
-                score = 5.0
-                reasoning = "The response directly addresses the question from the outset with strong topic alignment and targeted terminology."
-                strengths.append("Direct answer provided immediately in the opening sentence")
-                strengths.append(f"High key concept coverage ({len(overlap)} of {len(q_tokens)} key topic terms matched)")
-                if "who created" in question.lower() and "created" in ai_response.lower():
-                    score = 1.5
-                    reasoning = "The response is on-topic but names a creator that does not match the verified fact pattern."
-                    issues.append("The name supplied for the creator is inconsistent with the known origin of the subject")
-                elif (
-                    len(q_tokens) == 1
-                    and len(ai_response.split()) < 35
-                    and len(r_sentences) <= 2
-                    and any(signal in ai_response.lower() for signal in generic_definition_signals)
-                    and not any(signal in ai_response.lower() for signal in technical_definition_signals)
-                ):
-                    score = 3.5
-                    reasoning = "The response is directionally relevant but remains too generic and under-specified for a complete answer to the question."
-                    issues.append("The answer identifies the topic but does not provide enough explanatory detail to fully satisfy the prompt")
-            else:
-                score = 4.5
-                reasoning = "The response covers almost all core inquiry topics thoroughly, maintaining consistent topic alignment throughout."
-                strengths.append("Covers primary subjects requested in the question")
-        elif overlap_ratio >= 0.45:
-            score = 4.0
-            reasoning = "The response answers the primary question adequately, though some contextual aspects could be more tightly focused."
-            strengths.append("Addresses the core subject matter accurately")
-            issues.append("Contains minor tangential details that slightly dilute focus")
-        elif overlap_ratio >= 0.25:
-            score = 3.0
-            reasoning = "The response is partially relevant; it discusses related concepts but does not fully resolve the specific inquiry posed."
-            strengths.append("Recognizes the domain context of the question")
-            issues.append("Fails to directly answer the central question clause")
-        elif overlap_ratio >= 0.10:
-            score = 2.0
-            reasoning = "The response is weakly relevant, referencing minor related terms without answering what was actually asked."
-            issues.append("Significant topical drift away from the prompt")
-            issues.append("Missed the main inquiry intent")
-        else:
-            score = 1.0
-            reasoning = "The response is mostly irrelevant or off-topic, failing to address the submitted question's subject matter."
-            issues.append("Entirely unrelated subject focus")
-            issues.append("No meaningful conceptual overlap with the prompt")
-
-        if len(q_tokens) == 1 and q_tokens == {"ai"} and "artificial" in ai_response.lower() and "intelligence" in ai_response.lower():
-            score = 5.0
-            reasoning = "The response directly defines AI using the correct concept and stays tightly focused on the user question."
-            strengths.append("Direct definition of the requested concept")
-
-        return {
-            "score": score,
-            "reasoning": reasoning,
-            "strengths": strengths,
-            "issues": issues
-        }
+        if matched_concepts:
+            strengths.append(
+                f"Addresses {len(matched_concepts)} of {len(question_concepts)} normalized question concepts."
+            )
+        if coverage >= 0.5:
+            strengths.append("Responds to the central inquiry rather than relying only on surface wording.")
+        if coverage < 0.5:
+            issues.append("Several central question concepts are missing or not answered directly.")
+        if causal_question and not answers_cause:
+            issues.append("The question asks for a cause, but the response does not explain one.")
+        return {"score": score, "reasoning": reasoning, "strengths": strengths, "issues": issues}

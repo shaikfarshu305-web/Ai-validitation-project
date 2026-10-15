@@ -179,14 +179,15 @@ export const EvaluationDetailView: React.FC<Props> = ({
           title="Factual Accuracy"
           score={evaluation.accuracy_score}
           description={acc?.reasoning || 'Evaluates factual truth grounded on reference and RAG chunks.'}
-          weight={evaluation.verdict_details?.weights?.accuracy ?? 0.35}
+          weight={evaluation.verdict_details?.weights?.accuracy ?? 0.30}
           isActive={activeTab === 'accuracy'}
           onClick={() => setActiveTab(activeTab === 'accuracy' ? 'all' : 'accuracy')}
         />
         <DimensionCard
           dimension="hallucination"
           title="Hallucination Safety"
-          score={evaluation.hallucination_score}
+          score={evaluation.hallucination_score * 2}
+          scoreScale={10}
           description={hal?.reasoning || 'Claim-level verification of unsupported assertions and contradictions.'}
           weight={evaluation.verdict_details?.weights?.hallucination_safety ?? 0.25}
           isActive={activeTab === 'hallucination'}
@@ -206,7 +207,7 @@ export const EvaluationDetailView: React.FC<Props> = ({
           title="Completeness"
           score={evaluation.completeness_score}
           description={comp?.reasoning || 'Coverage of all inquiry aspects, sub-questions, and depth.'}
-          weight={evaluation.verdict_details?.weights?.completeness ?? 0.15}
+          weight={evaluation.verdict_details?.weights?.completeness ?? 0.20}
           isActive={activeTab === 'completeness'}
           onClick={() => setActiveTab(activeTab === 'completeness' ? 'all' : 'completeness')}
         />
@@ -237,6 +238,34 @@ export const EvaluationDetailView: React.FC<Props> = ({
                 <span className="font-bold text-[#5C3D2E] block mb-1">Judge Reasoning:</span>
                 <p className="text-[#2A1B14] leading-relaxed">{acc?.reasoning || 'No accuracy reasoning provided.'}</p>
               </div>
+
+              {acc?.claim_assessments && acc.claim_assessments.length > 0 && (
+                <div className="space-y-2">
+                  <span className="font-bold text-[#2A1B14] uppercase tracking-wider text-[11px] block">
+                    Claim-by-claim accuracy:
+                  </span>
+                  {acc.claim_assessments.map((item, i) => (
+                    <div key={i} className="p-3 rounded-xl bg-[#FAF7F2] border border-[#E8DFC8] space-y-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-semibold text-[#2A1B14]">{item.claim}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                          item.status === 'correct'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : item.status === 'incorrect'
+                            ? 'bg-rose-100 text-rose-800'
+                            : item.status === 'partially_correct'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-slate-100 text-slate-700'
+                        }`}>
+                          {item.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                      <p className="text-[#5C3D2E]">{item.reasoning}</p>
+                      {item.evidence && <p className="text-emerald-900"><strong>Evidence:</strong> {item.evidence}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* Supporting Evidence */}
               {acc?.supporting_evidence && acc.supporting_evidence.length > 0 && (

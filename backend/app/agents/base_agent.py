@@ -2,8 +2,10 @@ import re
 import json
 import time
 import logging
+import math
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List
+from app.agents.factual_consistency import _content_words
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +31,9 @@ class BaseAgent(ABC):
 
         # Direct JSON parse attempt
         try:
-            return json.loads(cleaned)
-        except Exception:
+            parsed = json.loads(cleaned)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
             pass
 
         # Search for first '{' and matching '}'
@@ -40,19 +43,19 @@ class BaseAgent(ABC):
             substring = cleaned[start:end+1]
             try:
                 return json.loads(substring)
-            except Exception as e:
+            except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse substring JSON for {self.agent_name}: {e}")
 
         return {}
 
-    def normalize_score(self, raw_score: Any) -> float:
+    def normalize_score(self, raw_score: Any, source_scale: int | None = None) -> float:
         """
         Convert common LLM score formats into the project's 0-5 quality scale.
-        Accepts percentages, fractions, 0-10 values, or 0-5 values.
+        An explicit source scale removes ambiguity for values such as 1 or 5.
         """
         try:
             if raw_score is None:
-                return 0.0
+                raise ValueError("Score is missing.")
 
             if isinstance(raw_score, str):
                 raw_score = raw_score.strip()
@@ -61,18 +64,36 @@ class BaseAgent(ABC):
                     num = float(re.sub(r'[^\d.]', '', parts[0]))
                     den = float(re.sub(r'[^\d.]', '', parts[1]))
                     if den > 0:
-                        raw_score = (num / den) * 100.0
+                        return float(max(0.0, min(5.0, (num / den) * 5.0)))
                     else:
-                        raw_score = 0.0
+                        raise ValueError("Score denominator must be positive.")
+                elif raw_score.endswith("%"):
+                    raw_score = raw_score[:-1]
+                    source_scale = 100
                 else:
                     raw_score = re.sub(r'[^\d.]', '', raw_score)
 
             if raw_score == "":
-                return 0.0
+                raise ValueError("Score is empty.")
 
             val = float(raw_score)
+            if not math.isfinite(val):
+                raise ValueError("Score must be finite.")
 
-            if 0.0 <= val <= 1.0:
+            if source_scale == 100:
+                if not 0.0 <= val <= 100.0:
+                    raise ValueError("Score is outside the 0-100 range.")
+                val /= 20.0
+            elif source_scale == 10:
+                if not 0.0 <= val <= 10.0:
+                    raise ValueError("Score is outside the 0-10 range.")
+                val /= 2.0
+            elif source_scale == 5:
+                if not 0.0 <= val <= 5.0:
+                    raise ValueError("Score is outside the 0-5 range.")
+            elif not 0.0 <= val <= 100.0:
+                raise ValueError("Score is outside the supported range.")
+            elif 0.0 <= val <= 1.0:
                 val = val * 5.0
             elif 1.0 < val <= 5.0:
                 pass
@@ -82,8 +103,16 @@ class BaseAgent(ABC):
                 val = val / 20.0
 
             return float(max(0.0, min(5.0, val)))
-        except Exception:
-            return 0.0
+        except (TypeError, ValueError, IndexError) as exc:
+            raise ValueError(f"Invalid judge score: {raw_score!r}") from exc
+
+    @staticmethod
+    def string_list(raw_value: Any) -> List[str] | None:
+        if raw_value is None:
+            return []
+        if isinstance(raw_value, list) and all(isinstance(item, str) for item in raw_value):
+            return raw_value
+        return None
 
     @staticmethod
     def keyword_tokens(text: str) -> List[str]:
@@ -133,12 +162,12 @@ class BaseAgent(ABC):
 
         target_terms = set()
         for text in [question or "", reference_answer or ""]:
-            target_terms |= set(BaseAgent.keyword_tokens(text))
+            target_terms |= _content_words(text)
 
         kept = []
         for chunk in retrieved_evidence:
             text = getattr(chunk, "text", str(chunk)) or ""
-            terms = set(BaseAgent.keyword_tokens(text))
+            terms = _content_words(text)
             overlap = len(target_terms & terms)
             similarity = getattr(chunk, "similarity_score", 0.0) or 0.0
             if overlap >= 1 or similarity >= 0.65:

@@ -66,7 +66,7 @@ The system stores chunked reference documents, embeds them, and retrieves top-k 
 ## 10. Scoring Dimensions
 - Relevance: 0-5 judge scale, normalized once to 0-100 for aggregation
 - Accuracy: 0-5 judge scale, normalized once to 0-100 for aggregation
-- Hallucination Safety: 0-5 judge scale (5 = safe), normalized once to 0-100 for aggregation
+- Hallucination Safety: stored on the legacy 0-5 judge scale (5 = safe), displayed on a 0-10 scale (10 = fully grounded and safe), and normalized to 0-100 for aggregation
 - Completeness: 0-5 judge scale, normalized once to 0-100 for aggregation
 - Overall weighted score: 0-100
 
@@ -76,9 +76,9 @@ Hallucination Percentage is distinct from Hallucination Safety: it is the percen
 The authoritative weighted score uses:
 
 - Relevance = 25%
-- Accuracy = 35%
+- Accuracy = 30%
 - Hallucination Safety = 25%
-- Completeness = 15%
+- Completeness = 20%
 
 This is normalized to produce the final 0-100 overall score.
 

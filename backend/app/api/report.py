@@ -58,7 +58,7 @@ def generate_pdf_report(
             ["Accuracy", f"{result.accuracy_score:.1f}/5"],
             ["Relevance", f"{result.relevance_score:.1f}/5"],
             ["Completeness", f"{result.completeness_score:.1f}/5"],
-            ["Hallucination Safety", f"{result.hallucination_score:.1f}/5"],
+            ["Hallucination Safety", f"{result.hallucination_score * 2:.1f}/10"],
             ["Hallucination Percentage (verified contradicted claims)", f"{hallucination_percentage:.1f}%"],
             ["Verdict", result.verdict]
         ]

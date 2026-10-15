@@ -4,9 +4,9 @@ from typing import Dict, Mapping, Tuple
 
 DIMENSION_WEIGHTS = {
     "relevance": 0.25,
-    "accuracy": 0.35,
+    "accuracy": 0.30,
     "hallucination_safety": 0.25,
-    "completeness": 0.15,
+    "completeness": 0.20,
 }
 
 

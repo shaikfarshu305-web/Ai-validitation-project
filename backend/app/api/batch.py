@@ -95,7 +95,7 @@ def export_batch_pdf(batch_id: str, db: Session) -> bytes:
         ["Average Accuracy", f"{batch.average_accuracy:.2f}"],
         ["Average Relevance", f"{batch.average_relevance:.2f}"],
         ["Average Completeness", f"{batch.average_completeness:.2f}"],
-        ["Average Hallucination Safety", f"{_average_metric(evaluation_metrics, 'hallucination_score'):.2f}/5"],
+        ["Average Hallucination Safety", f"{_average_metric(evaluation_metrics, 'hallucination_score') * 2:.2f}/10"],
         ["Average Hallucination Percentage", f"{sum(hallucination_percentages) / len(hallucination_percentages):.1f}%" if hallucination_percentages else "N/A"],
         ["Hallucination Frequency", f"{batch.hallucination_frequency:.1f}%"],
         ["Pass Count", str(batch.pass_count)],
@@ -145,7 +145,7 @@ def export_batch_pdf(batch_id: str, db: Session) -> bytes:
             ["Dimension", "Value"],
             ["Relevance", str(rec.relevance_score) if rec.relevance_score is not None else "N/A"],
             ["Accuracy", str(rec.accuracy_score) if rec.accuracy_score is not None else "N/A"],
-            ["Hallucination Safety", f"{rec.hallucination_score:.1f}/5" if rec.hallucination_score is not None else "N/A"],
+            ["Hallucination Safety", f"{rec.hallucination_score * 2:.1f}/10" if rec.hallucination_score is not None else "N/A"],
             ["Hallucination Percentage", f"{evaluation_metrics.get(rec.evaluation_id, {}).get('hallucination_percentage', 0.0):.1f}%" if rec.evaluation_id else "N/A"],
             ["Completeness", str(rec.completeness_score) if rec.completeness_score is not None else "N/A"],
             ["Status", safe(rec.status)],
@@ -341,10 +341,10 @@ def run_batch_evaluation(batch_id: str, db: Session = Depends(get_db)):
     if sys_settings and sys_settings.settings_json:
         s = migrate_legacy_default_weights(sys_settings.settings_json)
         weights = {
-            "accuracy": s.get("weight_accuracy", 0.35),
+            "accuracy": s.get("weight_accuracy", 0.30),
             "hallucination": s.get("weight_hallucination", 0.25),
             "relevance": s.get("weight_relevance", 0.25),
-            "completeness": s.get("weight_completeness", 0.15)
+            "completeness": s.get("weight_completeness", 0.20)
         }
         thresholds = {
             "pass": s.get("threshold_pass", 75.0),
@@ -563,7 +563,7 @@ def export_batch_results(batch_id: str, db: Session = Depends(get_db)):
     writer.writerow([
         "Row", "Question", "AI Response", "Reference Answer",
         "Overall Score", "Verdict", "Accuracy (0-5)", "Relevance (0-5)",
-        "Hallucination Safety (0-5)", "Hallucination Percentage (verified contradicted claims)",
+        "Hallucination Safety (0-10)", "Hallucination Percentage (verified contradicted claims)",
         "Completeness (0-5)", "Status", "Evaluation ID"
     ])
     evaluation_metrics = _batch_evaluation_metrics(records, db)
@@ -578,7 +578,7 @@ def export_batch_results(batch_id: str, db: Session = Depends(get_db)):
             r.verdict or "",
             r.accuracy_score or "",
             r.relevance_score or "",
-            r.hallucination_score or "",
+            r.hallucination_score * 2 if r.hallucination_score is not None else "",
             evaluation_metrics.get(r.evaluation_id, {}).get("hallucination_percentage", 0.0),
             r.completeness_score or "",
             r.status,

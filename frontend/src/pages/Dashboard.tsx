@@ -12,7 +12,7 @@ import {
   Search,
   ExternalLink
 } from 'lucide-react';
-import { DashboardOverview, EvaluationListItem } from '../types/evaluation';
+import { DashboardOverview, EvaluationListItem, SystemSettingsConfig } from '../types/evaluation';
 import { api } from '../services/api';
 import { VerdictBadge } from '../components/VerdictBadge';
 import { TrendLineChart, DimensionComparisonBarChart, VerdictDistributionDonutChart } from '../components/Charts';
@@ -24,6 +24,7 @@ interface Props {
 
 export const Dashboard: React.FC<Props> = ({ onViewEvaluation, onNavigateToVerify }) => {
   const [data, setData] = useState<DashboardOverview | null>(null);
+  const [settings, setSettings] = useState<SystemSettingsConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tableSearch, setTableSearch] = useState('');
@@ -59,6 +60,12 @@ export const Dashboard: React.FC<Props> = ({ onViewEvaluation, onNavigateToVerif
   useEffect(() => {
     fetchOverview();
   }, [filters.verdict, filters.minScore, filters.maxScore, filters.batchId, filters.status, filters.hallucination]);
+
+  useEffect(() => {
+    api.getSettings().then(setSettings).catch(() => {
+      setSettings(null);
+    });
+  }, []);
 
   const filteredRecent = (data?.recent_evaluations || []).filter((item) =>
     item.question.toLowerCase().includes(tableSearch.toLowerCase())
@@ -154,7 +161,9 @@ export const Dashboard: React.FC<Props> = ({ onViewEvaluation, onNavigateToVerif
             <span className="text-2xl font-black text-[#2A1B14]">{data?.average_accuracy?.toFixed(1) ?? '0.0'}</span>
             <span className="text-xs font-bold text-[#9E775F]">/ 5.0</span>
           </div>
-          <span className="text-[10px] text-emerald-700 font-semibold mt-1">Weight 35%</span>
+          <span className="text-[10px] text-emerald-700 font-semibold mt-1">
+            Weight {Math.round((settings?.weight_accuracy ?? 0.30) * 100)}%
+          </span>
         </div>
 
         {/* Average Relevance */}
@@ -167,7 +176,9 @@ export const Dashboard: React.FC<Props> = ({ onViewEvaluation, onNavigateToVerif
             <span className="text-2xl font-black text-[#2A1B14]">{data?.average_relevance?.toFixed(1) ?? '0.0'}</span>
             <span className="text-xs font-bold text-[#9E775F]">/ 5.0</span>
           </div>
-          <span className="text-[10px] text-[#7D543E] font-semibold mt-1">Weight 25%</span>
+          <span className="text-[10px] text-[#7D543E] font-semibold mt-1">
+            Weight {Math.round((settings?.weight_relevance ?? 0.25) * 100)}%
+          </span>
         </div>
 
         {/* Average Completeness */}
@@ -180,7 +191,9 @@ export const Dashboard: React.FC<Props> = ({ onViewEvaluation, onNavigateToVerif
             <span className="text-2xl font-black text-[#2A1B14]">{data?.average_completeness?.toFixed(1) ?? '0.0'}</span>
             <span className="text-xs font-bold text-[#9E775F]">/ 5.0</span>
           </div>
-          <span className="text-[10px] text-amber-800 font-semibold mt-1">Weight 15%</span>
+          <span className="text-[10px] text-amber-800 font-semibold mt-1">
+            Weight {Math.round((settings?.weight_completeness ?? 0.20) * 100)}%
+          </span>
         </div>
 
         {/* Hallucination Frequency */}

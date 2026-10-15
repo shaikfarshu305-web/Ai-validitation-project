@@ -1,8 +1,7 @@
 import time
-import re
 from typing import Dict, Any, List, Optional
 from app.agents.base_agent import BaseAgent
-from app.agents.factual_consistency import assess_factual_consistency
+from app.agents.factual_consistency import assess_claims, assess_factual_consistency
 from app.services.llm_service import llm_service
 from app.schemas.evaluation_schemas import RetrievedChunk
 
@@ -86,16 +85,39 @@ class HallucinationDetectionAgent(BaseAgent):
         )
 
         if parsed and "hallucination_status" in parsed and "flagged_claims" in parsed:
-            score = float(max(0.0, min(5.0, parsed.get("hallucination_score", 4.0))))
-            result = {
-                "hallucination_status": str(parsed.get("hallucination_status", "LOW")).upper(),
-                "hallucination_score": score,
-                "flagged_claims": list(parsed.get("flagged_claims", [])),
-                "reasoning": str(parsed.get("reasoning", "")),
-                "execution_time_ms": round((time.time() - start_time) * 1000, 2),
-                "status": "SUCCESS"
-            }
-            return self._apply_consistency(result, consistency)
+            try:
+                score = self.normalize_score(parsed.get("hallucination_score"), source_scale=5)
+            except ValueError:
+                score = None
+            status = parsed.get("hallucination_status")
+            reasoning = parsed.get("reasoning")
+            claims = parsed.get("flagged_claims")
+            valid_claims = (
+                isinstance(claims, list)
+                and all(
+                    isinstance(claim, dict)
+                    and isinstance(claim.get("claim"), str)
+                    and claim.get("status") in {"supported", "unsupported", "contradicted"}
+                    and isinstance(claim.get("reasoning"), str)
+                    and (claim.get("evidence") is None or isinstance(claim.get("evidence"), str))
+                    for claim in claims
+                )
+            )
+            if (
+                score is not None
+                and status in {"LOW", "MEDIUM", "HIGH"}
+                and isinstance(reasoning, str)
+                and valid_claims
+            ):
+                result = {
+                    "hallucination_status": status,
+                    "hallucination_score": score,
+                    "flagged_claims": claims,
+                    "reasoning": reasoning,
+                    "execution_time_ms": round((time.time() - start_time) * 1000, 2),
+                    "status": "SUCCESS"
+                }
+                return self._apply_consistency(result, consistency)
 
         res = self._local_evaluate(question, ai_response, reference_answer, source_information, relevant_chunks)
         res = self._apply_consistency(res, consistency)
@@ -114,11 +136,11 @@ class HallucinationDetectionAgent(BaseAgent):
             result["reasoning"] = f"Hallucination detected: {consistency['reasoning']}"
         elif state == "UNSUPPORTED":
             result["hallucination_status"] = "MEDIUM"
-            result["hallucination_score"] = min(float(result["hallucination_score"]), 3.5)
+            result["hallucination_score"] = min(float(result["hallucination_score"]), 2.5)
             result["flagged_claims"] = consistency["flagged_claims"]
             result["reasoning"] = consistency["reasoning"]
         elif state == "PARTIALLY_CONSISTENT":
-            result["hallucination_score"] = min(float(result["hallucination_score"]), 4.5)
+            result["hallucination_score"] = min(float(result["hallucination_score"]), 4.0)
             if result["hallucination_status"] == "LOW":
                 result["hallucination_status"] = "MEDIUM"
         return result
@@ -131,122 +153,47 @@ class HallucinationDetectionAgent(BaseAgent):
         source_information: Optional[str],
         retrieved_evidence: Optional[List[RetrievedChunk]]
     ) -> Dict[str, Any]:
-        corpus_list = []
-        if reference_answer:
-            corpus_list.append(reference_answer)
-        if source_information:
-            corpus_list.append(source_information)
-        if retrieved_evidence:
-            for c in retrieved_evidence:
-                corpus_list.append(c.text)
-
-        full_corpus = " ".join(corpus_list).lower()
-
-        # Split response into atomic claim sentences
-        raw_sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', ai_response) if len(s.strip()) > 8]
-        if not raw_sentences:
-            raw_sentences = [ai_response.strip()]
-
-        flagged_claims = []
-        contradicted_count = 0
-        unsupported_count = 0
-        supported_count = 0
-
-        # Disproved myths or common contradictory markers
-        myth_triggers = ["visible from space", "great wall", "10% of their brain", "blood is blue", "sugar causes hyperactivity", "lightning never strikes"]
-
-        for sent in raw_sentences:
-            s_lower = sent.lower()
-            words = self.keyword_tokens(s_lower)
-            if not words:
-                continue
-
-            # Check for known contradictory myths if present in TruthfulQA style
-            is_contradicted = False
-            for myth in myth_triggers:
-                if myth in s_lower:
-                    # If corpus refutes it or mentions myth/not
-                    if "myth" in full_corpus or "cannot" in full_corpus or "not" in full_corpus or "refuted" in full_corpus:
-                        is_contradicted = True
-                        break
-
-            stopwords = {"the", "and", "are", "is", "was", "were", "from", "for", "with", "between", "that", "this", "can", "may", "which", "into", "their"}
-            content_words = [w for w in words if w not in stopwords]
-            if not content_words:
-                content_words = words
-
-            # Find matching words or stems in evidence corpus
-            matches = [w for w in content_words if (w in full_corpus or (len(w) >= 5 and w[:4] in full_corpus))]
-            overlap = len(matches) / len(content_words) if content_words else 0.0
-
-            if is_contradicted:
-                contradicted_count += 1
-                flagged_claims.append({
-                    "claim": sent,
-                    "status": "contradicted",
-                    "reasoning": "This statement contradicts established scientific consensus and verified reference material.",
-                    "evidence": "Corroborated evidence refutes this common misconception or conflicting claim."
-                })
-            elif overlap >= 0.40:
-                supported_count += 1
-                flagged_claims.append({
-                    "claim": sent,
-                    "status": "supported",
-                    "reasoning": "Claim terms directly match verified reference material.",
-                    "evidence": "Ground truth corpus corroborates the key concepts in this statement."
-                })
-            elif overlap >= 0.20:
-                supported_count += 1
-                flagged_claims.append({
-                    "claim": sent,
-                    "status": "supported",
-                    "reasoning": "Plausible contextual statement consistent with surrounding verified facts.",
-                    "evidence": "Consistent with broader domain knowledge in retrieved evidence."
-                })
-            else:
-                unsupported_count += 1
-                flagged_claims.append({
-                    "claim": sent,
-                    "status": "unsupported",
-                    "reasoning": "This factual claim lacks verification or documentation in the retrieved evidence corpus.",
-                    "evidence": "No matching documentation found in RAG knowledge chunks or reference text."
-                })
-
-        if not full_corpus.strip():
-            return {
-                "hallucination_status": "MEDIUM",
-                "hallucination_score": 3.5,
-                "flagged_claims": [{
-                    "claim": claim["claim"],
-                    "status": "unsupported",
-                    "reasoning": "No reference evidence was available to verify this claim.",
-                    "evidence": "No evidence available.",
-                } for claim in flagged_claims],
-                "reasoning": "Claims could not be verified because no reference or retrieved evidence was available.",
-            }
-
-        # Calculate safety score and status
-        total_claims = max(1, len(flagged_claims))
-        if contradicted_count > 0:
-            status = "HIGH"
-            score = max(0.5, 2.0 - (contradicted_count * 0.5))
-            reasoning = f"Severe hallucination alert: Found {contradicted_count} contradicted statement(s) that directly conflict with verified ground truth."
-        elif unsupported_count >= 2 or (unsupported_count / total_claims) > 0.5:
+        evidence_texts = [text for text in (reference_answer, source_information) if text]
+        evidence_texts.extend(chunk.text for chunk in (retrieved_evidence or []))
+        analysis = assess_claims(question, ai_response, evidence_texts)
+        status_map = {
+            "correct": "supported",
+            "partially_correct": "unsupported",
+            "incorrect": "contradicted",
+            "unverifiable": "unsupported",
+        }
+        score_map = {
+            "correct": 5.0,
+            "partially_correct": 3.0,
+            "incorrect": 0.0,
+            "unverifiable": 2.5,
+        }
+        claims = analysis["claims"]
+        flagged_claims = [
+            {**claim, "status": status_map[claim["status"]]}
+            for claim in claims
+        ]
+        score = sum(score_map[claim["status"]] for claim in claims) / max(1, len(claims))
+        contradicted_count = sum(claim["status"] == "contradicted" for claim in flagged_claims)
+        unsupported_count = sum(claim["status"] == "unsupported" for claim in flagged_claims)
+        if not analysis["has_evidence"]:
             status = "MEDIUM"
-            score = 3.0
-            reasoning = f"Noticeable hallucination risk: {unsupported_count} of {total_claims} claims could not be verified against the knowledge base."
-        elif unsupported_count == 1:
-            status = "LOW"
-            score = 4.5
-            reasoning = "Low hallucination risk: Most assertions are corroborated, with only one unverified claim noted."
+            reasoning = (
+                "No reference or relevant retrieved evidence was available. "
+                "Claims are unverified; this does not prove that they are false."
+            )
+        elif contradicted_count:
+            status = "HIGH"
+            reasoning = f"{contradicted_count} claim(s) directly contradict the available evidence."
+        elif unsupported_count:
+            status = "MEDIUM" if unsupported_count >= len(flagged_claims) / 2 else "LOW"
+            reasoning = f"{unsupported_count} of {len(flagged_claims)} claim(s) are only partially supported or unverifiable."
         else:
             status = "LOW"
-            score = 5.0
-            reasoning = "High fidelity: 100% of factual assertions were successfully grounded against verified evidence."
-
+            reasoning = "Every evaluated factual claim is supported by the available evidence."
         return {
             "hallucination_status": status,
             "hallucination_score": score,
             "flagged_claims": flagged_claims,
-            "reasoning": reasoning
+            "reasoning": reasoning,
         }
