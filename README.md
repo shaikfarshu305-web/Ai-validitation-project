@@ -216,7 +216,26 @@ cd backend
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## 29. Quick Verification
+## 29. Deploying to Render and Vercel
+
+### Render (FastAPI backend)
+Configure a Web Service for this repository with the repository root as its root directory:
+
+- Build command: `pip install -r requirements.txt`
+- Start command: `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+
+Set any required backend secrets and runtime options in Render's environment settings. After deployment, check that `https://ai-validation-project-1.onrender.com/` reports `ONLINE` and that `/api/system/status` returns JSON.
+
+### Vercel (frontend)
+Configure the project root as `frontend`, the build command as `npm run build`, and the output directory as `dist`. Set this build-time environment variable in Vercel:
+
+```env
+VITE_API_BASE_URL=https://ai-validation-project-1.onrender.com/api
+```
+
+Redeploy the Vercel project after setting the variable or changing the frontend. The frontend uses this URL for API requests; if it is omitted, production builds default to the deployed Render API and local development continues to use `http://localhost:8000/api`.
+
+## 30. Quick Verification
 ```bash
 cd "c:\Users\SHAIK RESHMA\OneDrive\Desktop\AI Project"
 python -m pytest -q
